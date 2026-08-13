@@ -2461,5 +2461,150 @@ html { -webkit-touch-callout: none; }
 })();
 </script>
 
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+<script>
+(function(){
+  // ===== CẤU HÌNH FIREBASE - BẠN THAY BẰNG CONFIG CỦA BẠN =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyBtYQ2YjoMf5xoUyPwjJ1rhECUIoK77L-I",
+    authDomain: "btn-esport-a9460.firebaseapp.com",
+    databaseURL: "https://btn-esport-a9460-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "btn-esport-a9460",
+    storageBucket: "btn-esport-a9460.firebasestorage.app",
+    messagingSenderId: "339636392260",
+    appId: "1:339636392260:web:4c3bd3ba4d7bbd33508711",
+    measurementId: "G-LEE9G8BWD6"
+  };
+  
+  let db = null;
+  let isFirebaseReady = false;
+  
+  function initFirebase(){
+    try{
+      if(false){ // Firebase đã cấu hình
+        console.log('⚠️ Chưa cấu hình Firebase - đang dùng chế độ local only');
+        document.getElementById('firebaseStatus')?.remove();
+        // Hiện hướng dẫn
+        setTimeout(showFirebaseGuide, 2000);
+        return;
+      }
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      isFirebaseReady = true;
+      console.log('✅ Firebase đã kết nối');
+      setupSync();
+      let status = document.getElementById('firebaseStatus');
+      if(status){ status.textContent = '☁️ Đã kết nối cloud - đồng bộ mọi nơi'; status.style.background='rgba(34,197,94,0.2)'; status.style.borderColor='rgba(34,197,94,0.4)'; status.style.color='#4ade80'; }
+    }catch(e){
+      console.log('Firebase init fail', e);
+    }
+  }
+  
+  function showFirebaseGuide(){
+    let guide = document.createElement('div');
+    guide.id='firebaseGuide';
+    guide.style.cssText='position:fixed; bottom:20px; right:20px; left:20px; max-width:420px; margin-left:auto; background:rgba(10,15,28,0.95); border:1px solid rgba(251,146,60,0.5); border-radius:16px; padding:16px; z-index:10000; backdrop-filter:blur(20px);';
+    guide.innerHTML=`
+      <div style="font-weight:900; color:#fb923c; margin-bottom:8px;">⚠️ Chưa đồng bộ cloud</div>
+      <div style="font-size:11px; color:#94a3b8; line-height:1.5; margin-bottom:12px;">
+        Hiện tại web chỉ lưu trên máy bạn (IndexedDB). Sang máy khác sẽ không thấy chỉnh sửa.<br>
+        Muốn chỉnh ở đâu cũng hiện, làm 3 bước:
+      </div>
+      <div style="font-size:10px; background:rgba(0,0,0,0.4); padding:10px; border-radius:8px; color:#e2e8f0; line-height:1.6;">
+        1. Vào <b>firebase.google.com</b> → Tạo project<br>
+        2. Realtime Database → Create → Asia Southeast<br>
+        3. Copy config dán vào file index.html dòng firebaseConfig<br>
+        4. Deploy lại lên Render
+      </div>
+      <button onclick="this.parentElement.remove()" style="margin-top:10px; background:#1e293b; color:white; border:none; padding:6px 12px; border-radius:8px; font-size:10px; cursor:pointer;">Đã hiểu</button>
+    `;
+    document.body.appendChild(guide);
+  }
+  
+  function setupSync(){
+    if(!db) return;
+    
+    // Lắng nghe thay đổi từ cloud
+    db.ref('btn_data').on('value', (snap)=>{
+      let cloudData = snap.val();
+      if(!cloudData) return;
+      console.log('☁️ Nhận dữ liệu từ cloud');
+      let changed = false;
+      for(let k in cloudData){
+        if(k.startsWith('btn_')){
+          let local = localStorage.getItem(k);
+          let cloudVal = typeof cloudData[k]==='string' ? cloudData[k] : JSON.stringify(cloudData[k]);
+          if(local !== cloudVal){
+            localStorage.setItem(k, cloudVal);
+            changed = true;
+          }
+        }
+      }
+      if(changed){
+        console.log('🔄 Cloud có dữ liệu mới, reload để hiện');
+        // Không reload ngay, để user tự F5 hoặc tự cập nhật UI
+        // location.reload();
+      }
+    });
+    
+    // Auto push local lên cloud mỗi 3s
+    setInterval(()=>{
+      if(!isFirebaseReady) return;
+      let data = {};
+      for(let i=0;i<localStorage.length;i++){
+        let k = localStorage.key(i);
+        if(k && k.startsWith('btn_')){
+          data[k] = localStorage.getItem(k);
+        }
+      }
+      data['_lastSync'] = new Date().toISOString();
+      db.ref('btn_data').update(data).then(()=>{
+        // console.log('☁️ Đã đồng bộ lên cloud');
+      }).catch(e=>console.log('sync fail', e));
+    }, 3000);
+    
+    // Sync nhạc (lưu URL base64 nhỏ hoặc tên)
+    db.ref('btn_music_name').on('value', snap=>{
+      let name = snap.val();
+      if(name && name!==localStorage.getItem('btn_music_name')){
+        localStorage.setItem('btn_music_name', name);
+      }
+    });
+  }
+  
+  // Hàm push thủ công
+  window.btnPushToCloud = function(){
+    if(!db){ alert('Chưa cấu hình Firebase'); return; }
+    let data = {};
+    for(let i=0;i<localStorage.length;i++){
+      let k = localStorage.key(i);
+      if(k && k.startsWith('btn_')) data[k]=localStorage.getItem(k);
+    }
+    db.ref('btn_data').set(data).then(()=> alert('✅ Đã đẩy lên cloud! Sang máy khác sẽ thấy'));
+  };
+  
+  window.btnPullFromCloud = function(){
+    if(!db){ alert('Chưa cấu hình Firebase'); return; }
+    db.ref('btn_data').once('value').then(snap=>{
+      let d = snap.val();
+      if(!d){ alert('Cloud trống'); return; }
+      for(let k in d) if(k.startsWith('btn_')) localStorage.setItem(k, typeof d[k]==='string'?d[k]:JSON.stringify(d[k]));
+      alert('✅ Đã kéo từ cloud, reload trang');
+      location.reload();
+    });
+  };
+  
+  // Khởi tạo
+  setTimeout(initFirebase, 1000);
+})();
+</script>
+
+<div id="firebaseStatus" style="position:fixed; top:70px; right:20px; background:rgba(251,146,60,0.15); border:1px solid rgba(251,146,60,0.3); color:#fb923c; padding:6px 10px; border-radius:8px; font-size:10px; z-index:9998; backdrop-filter:blur(10px);">⏳ Đang kiểm tra cloud...</div>
+
 </body>
 </html>
